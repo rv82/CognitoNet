@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.IO;
 using System.Net.Http;
@@ -9,24 +10,25 @@ using System.Threading.Tasks;
 
 namespace CognitoNet
 {
-    internal class Program
+    public class Program
     {
         private string _apiKey;
         private string _apiSecret;
 
-        #region Constants
-
-        private const string KeyFile = "key.txt";
-        private const char KeySeparator = ',';
-        private const string CognitoUrl = "https://sandbox.cognitohq.com/profiles";
-        private const string ContentType = "application/vnd.api+json";
-        private const string AcceptType = "application/vnd.api+json";
-        private const string Version = "2016-09-01";
-
-        #endregion Constants
+        /// <summary>
+        /// Constructor. Reads key file and sets keys to program.
+        /// </summary>
+        public Program()
+        {
+            // Config file contains one line with comma separated api key and secret key
+            string content = File.ReadAllText(Config.KeyFile);
+            string[] lines = content.Split(Config.KeySeparator);
+            _apiKey = lines[0];
+            _apiSecret = lines[1];
+        }
 
         /// <summary>
-        /// Returns digest encoded to Base64 string
+        /// Returns digest encoded to Base64 string.
         /// </summary>
         /// <param name="data">hashing data.</param>
         /// <returns></returns>
@@ -58,6 +60,12 @@ namespace CognitoNet
             return Convert.ToBase64String(signatureBytes);
         }
 
+        /// <summary>
+        /// Constructs and returns signing string using date and SHA-256 digest converted to base64 string.
+        /// </summary>
+        /// <param name="utcDate"></param>
+        /// <param name="digest"></param>
+        /// <returns></returns>
         private string GetSigningString(string utcDate, string digest)
         {
             const string requestTarget = "post /profiles";
@@ -70,6 +78,12 @@ namespace CognitoNet
             return string.Join("\n", signingStringParts);
         }
 
+        /// <summary>
+        /// Returns authorization string.
+        /// </summary>
+        /// <param name="apiKey">public key.</param>
+        /// <param name="signature">signature.</param>
+        /// <returns>authorization string.</returns>
         private string GetAuthorizationString(string apiKey, string signature)
         {
             string[] authorizationParts = {
@@ -81,40 +95,71 @@ namespace CognitoNet
             return string.Join(",", authorizationParts);
         }
 
-        private async Task Run()
+        private string GetProfileID(string json)
+        {
+            JObject jObject = JObject.Parse(json);
+            return (string)jObject.SelectToken(JsonResponsePaths.DataID);
+        }
+
+        private async Task<string> SendRequestAndGetResponseAsync(string targetRoute, string body)
         {
             string utcDate = DateTimeOffset.Now.ToString("r");
-
-            string body = JsonConvert.SerializeObject(new { data = new { type = "profile" } });
             string digest = GetDigest(body);
-            string signingString = GetSigningString(utcDate, digest);
+            string signingString = AuthUtils.GetSigningString(targetRoute, utcDate, digest);
             string signature = GetSignature(_apiSecret, signingString);
             string authorization = GetAuthorizationString(_apiKey, signature);
 
+            using (HttpClient httpClient = new HttpClient())
+            {
+                StringContent content = new StringContent(body, Encoding.UTF8);
+
+                HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Post, Cognito.CognitoUrl + targetRoute);
+
+                requestMessage.Headers.Add(Headers.Date, utcDate);
+                requestMessage.Headers.Add(Headers.Digest, digest);
+                requestMessage.Headers.Add(Headers.Authorization, authorization);
+                requestMessage.Headers.Add(Headers.CognitoVersion, Cognito.Version);
+                // Accept-type header
+                requestMessage.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(Cognito.AcceptType));
+                // Content-Type header
+                content.Headers.ContentType = new MediaTypeHeaderValue(Cognito.ContentType);
+                requestMessage.Content = content;
+
+                HttpResponseMessage responseMessage = await httpClient.SendAsync(requestMessage);
+                responseMessage.EnsureSuccessStatusCode();
+                return await responseMessage.Content.ReadAsStringAsync();
+            }
+        }
+
+        /// <summary>
+        /// Async entry point.
+        /// </summary>
+        private async Task RunAsync()
+        {
             try
             {
-                using (HttpClient httpClient = new HttpClient())
-                {
-                    StringContent content = new StringContent(body, Encoding.UTF8);
+                string body;
+                string responseBody;
+                string profileID;
 
-                    HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod.Post, CognitoUrl);
+                // ВНИМАНИЕ! Согласно документации, эту процедуру надо проделать один раз, получить profile ID,
+                // сохранить его где-то (например в БД) и в дальнейшем использовать его.
+                // Authorization
+                body = RequestBodies.ProfileCreatingRequestBody;
+                responseBody = await SendRequestAndGetResponseAsync(CognitoUrlRoutes.Profiles, body);
+                profileID = GetProfileID(responseBody);
+                Console.WriteLine($"Profile ID = {profileID}");
 
-                    requestMessage.Headers.Add("Date", utcDate);
-                    requestMessage.Headers.Add("Digest", digest);
-                    requestMessage.Headers.Add("Authorization", authorization);
-                    requestMessage.Headers.Add("Cognito-Version", Version);
-                    // Accept-type header
-                    requestMessage.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(AcceptType));
-                    // Content-Type header
-                    content.Headers.ContentType = new MediaTypeHeaderValue(ContentType);
-                    requestMessage.Content = content;
+                // this ID was get by using ProfileCreatingRequestBody
+                //string progileID = "prf_dSE2ETMdf5GN5s";
 
-                    HttpResponseMessage responseMessage = await httpClient.SendAsync(requestMessage);
-                    responseMessage.EnsureSuccessStatusCode();
-                    string responseBody = await responseMessage.Content.ReadAsStringAsync();
-
-                    Console.WriteLine(responseBody);
-                }
+                // Searching person by phone using progileID
+                string phone = "+16508007985";
+                body = RequestUtils.GetSearchRequestBody(phone, profileID);
+                responseBody = await SendRequestAndGetResponseAsync(CognitoUrlRoutes.IdentitySearches, body);
+                // Пока не стал извлекать конкретные данные.
+                // Сделать это несложно при помощи Newtonsoft.Json.Linq.
+                Console.WriteLine(responseBody);
             }
             catch (Exception ex)
             {
@@ -123,21 +168,12 @@ namespace CognitoNet
             }
         }
 
-        public Program()
-        {
-            // Config file contains one line with comma separated api key and secret key
-            string content = File.ReadAllText(KeyFile);
-            string[] lines = content.Split(KeySeparator);
-            _apiKey = lines[0];
-            _apiSecret = lines[1];
-        }
-
-        private static void Main(string[] args)
+        internal static void Main(string[] args)
         {
             try
             {
                 Program program = new Program();
-                Task task = program.Run();
+                Task task = program.RunAsync();
                 task.Wait();
             }
             catch (Exception ex)
@@ -145,6 +181,7 @@ namespace CognitoNet
                 Console.WriteLine(ex.Message);
                 Console.WriteLine(ex.StackTrace);
             }
+            Console.WriteLine(Messages.PressAnyKeyToStopProgram);
             Console.ReadKey();
         }
     }
