@@ -60,41 +60,6 @@ namespace CognitoNet
             return Convert.ToBase64String(signatureBytes);
         }
 
-        /// <summary>
-        /// Constructs and returns signing string using date and SHA-256 digest converted to base64 string.
-        /// </summary>
-        /// <param name="utcDate"></param>
-        /// <param name="digest"></param>
-        /// <returns></returns>
-        private string GetSigningString(string utcDate, string digest)
-        {
-            const string requestTarget = "post /profiles";
-
-            string[] signingStringParts = {
-                    $"(request-target): {requestTarget}",
-                    $"date: {utcDate}",
-                    $"digest: {digest}"
-                };
-            return string.Join("\n", signingStringParts);
-        }
-
-        /// <summary>
-        /// Returns authorization string.
-        /// </summary>
-        /// <param name="apiKey">public key.</param>
-        /// <param name="signature">signature.</param>
-        /// <returns>authorization string.</returns>
-        private string GetAuthorizationString(string apiKey, string signature)
-        {
-            string[] authorizationParts = {
-                $"Signature keyId=\"{apiKey}\"",
-                "algorithm=\"hmac-sha256\"",
-                "headers=\"(request-target) date digest\"",
-                $"signature=\"{signature}\""
-            };
-            return string.Join(",", authorizationParts);
-        }
-
         private string GetProfileID(string json)
         {
             JObject jObject = JObject.Parse(json);
@@ -107,7 +72,7 @@ namespace CognitoNet
             string digest = GetDigest(body);
             string signingString = AuthUtils.GetSigningString(targetRoute, utcDate, digest);
             string signature = GetSignature(_apiSecret, signingString);
-            string authorization = GetAuthorizationString(_apiKey, signature);
+            string authorization = AuthUtils.GetAuthorizationString(_apiKey, signature);
 
             using (HttpClient httpClient = new HttpClient())
             {

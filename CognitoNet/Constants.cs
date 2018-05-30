@@ -42,12 +42,28 @@
     public static class AuthStrings
     {
         public const string SigningString = "(request-target): post {0}\ndate: {1}\ndigest: {2}";
+        public const string AuthorizationString = "Signature keyId=\"{0}\",algorithm=\"hmac-sha256\",headers=\"(request-target) date digest\",signature=\"{1}\"";
     }
 
     public static class AuthUtils
     {
+        /// <summary>
+        /// Constructs and returns signing string using date and SHA-256 digest converted to base64 string.
+        /// </summary>
+        /// <param name="utcDate"></param>
+        /// <param name="digest"></param>
+        /// <returns></returns>
         public static string GetSigningString(string requestTarget, string utcDate, string digest) =>
             string.Format(AuthStrings.SigningString, requestTarget, utcDate, digest);
+
+        /// <summary>
+        /// Returns authorization string.
+        /// </summary>
+        /// <param name="apiKey">public key.</param>
+        /// <param name="signature">signature.</param>
+        /// <returns>authorization string.</returns>
+        public static string GetAuthorizationString(string apiKey, string signature) =>
+            string.Format(AuthStrings.AuthorizationString, apiKey, signature);
     }
 
     public static class RequestUtils
