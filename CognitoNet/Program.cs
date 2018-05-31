@@ -66,6 +66,12 @@ namespace CognitoNet
             return (string)jObject.SelectToken(JsonResponsePaths.DataID);
         }
 
+        private string GetResponseType(string response)
+        {
+            JObject jObject = JObject.Parse(response);
+            return (string)jObject.SelectToken(JsonResponsePaths.DataType); ;
+        }
+
         private async Task<string> SendRequestAndGetResponseAsync(string targetRoute, string body)
         {
             string utcDate = DateTimeOffset.Now.ToString("r");
@@ -110,21 +116,37 @@ namespace CognitoNet
                 // ВНИМАНИЕ! Согласно документации, эту процедуру надо проделать один раз, получить profile ID,
                 // сохранить его где-то (например в БД) и в дальнейшем использовать его.
                 // Authorization
+                /*
                 body = RequestBodies.ProfileCreatingRequestBody;
                 responseBody = await SendRequestAndGetResponseAsync(CognitoUrlRoutes.Profiles, body);
                 profileID = GetProfileID(responseBody);
+                if(profileID==null)
+                {
+                    return;
+                }
                 Console.WriteLine($"Profile ID = {profileID}");
+                */
 
                 // this ID was get by using ProfileCreatingRequestBody
-                //string progileID = "prf_dSE2ETMdf5GN5s";
+                profileID = "prf_dSE2ETMdf5GN5s";
 
                 // Searching person by phone using progileID
                 string phone = "+16508007985";
                 body = RequestUtils.GetSearchRequestBody(phone, profileID);
                 responseBody = await SendRequestAndGetResponseAsync(CognitoUrlRoutes.IdentitySearches, body);
-                // Пока не стал извлекать конкретные данные.
-                // Сделать это несложно при помощи Newtonsoft.Json.Linq.
-                Console.WriteLine(responseBody);
+
+                switch (GetResponseType(responseBody))
+                {
+                    case ResponseTypes.IdentitySearch:
+                        // Do smth with responseBody
+                        Console.WriteLine(ResponseTypes.IdentitySearch);
+                        break;
+
+                    case ResponseTypes.IdentitySearchJob:
+                        // Check status of identity search job. If it is 'completed', fetch result of job
+                        // and do smth witht it.
+                        break;
+                }
             }
             catch (Exception ex)
             {

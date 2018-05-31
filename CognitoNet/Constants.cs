@@ -72,9 +72,17 @@
             string.Format(RequestBodies.SearchRequestBody, phone, profileID);
     }
 
+    public static class ResponseTypes
+    {
+        public const string Profile = "profile";
+        public const string IdentitySearch = "identity_search";
+        public const string IdentitySearchJob = "identity_search_job";
+    }
+
     public static class JsonResponsePaths
     {
         public const string DataID = "data.id";
+        public const string DataType = "data.type";
     }
 
     public static class Messages
